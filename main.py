@@ -6,6 +6,7 @@ from google.genai import types
 from call_function import call_function, available_functions
 from functions.get_files_info import get_files_info
 
+
 load_dotenv()
 api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
@@ -21,6 +22,8 @@ messages = [
     types.Content(role="user", parts=[types.Part(text=sys.argv[1])]),
 ]
 
+
+
 system_prompt = """
 You are a helpful AI coding agent.
 
@@ -34,14 +37,36 @@ When a user asks a question or makes a request, make a function call plan. You c
 All paths you provide should be relative to the working directory. You do not need to specify the working directory in your function calls as it is automatically injected for security reasons.
 """
 
-response = client.models.generate_content(
-    model=model_name,
-    contents=messages,
-    config=types.GenerateContentConfig(
-    tools=[available_functions], 
-    system_instruction=system_prompt
-),
-)
+
+
+
+for i in range(20):
+    response = client.models.generate_content(
+        model=model_name,
+        contents=messages,
+        config=types.GenerateContentConfig(
+            tools=[available_functions],
+            system_instruction=system_prompt
+        ),
+    )
+    no_more_function_calls = True
+    for candidate in response.candidates:
+        part = candidate.content.parts[0] if candidate.content.parts else None
+        if part and hasattr(part, "function_call") and part.function_call:
+            no_more_function_calls = False
+            result_message = call_function(part.function_call, verbose="--verbose" in sys.argv)
+            messages.append(result_message)
+        else:
+            messages.append(candidate.content)
+
+    if no_more_function_calls:
+        final_part = response.candidates[0].content.parts[0]
+        if hasattr(final_part, "text"):
+            print(final_part.text)
+        else:
+            print("[No final answer text found.]")
+        break
+        
 
 if response.function_calls:
     for function_call_part in response.function_calls:
